@@ -1,0 +1,323 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{nicefrac}
+\usepackage{bm}
+\usepackage{hyperref}
+\usepackage{xurl}
+\usepackage[nottoc]{tocbibind}
+
+\newtheorem*{lemma}{Lemma}
+
+\title{Zano $\nicefrac{d}{v}$-CLSAG review}
+\author{Cypher Stack\thanks{\url{https://cypherstack.com}}}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+This report describes the findings of a review of the $\nicefrac{d}{v}$-CLSAG preprint\footnote{\url{https://github.com/hyle-team/docs/tree/master/zano/dv-CLSAG-extension}} by Zano, using the initial version of the preprint at commit \href{https://github.com/hyle-team/docs/tree/182043dd497dab8dc66464028b791641e4f7a56e/zano/dv-CLSAG-extension}{\texttt{182043d}}.
+It reflects a limited time scope and represents a best effort; as with any review, it cannot guarantee correctness or security, or that the preprint is otherwise free of errors.
+Further, it cannot guarantee that any particular implementation of the $\nicefrac{d}{v}$-CLSAG construction is correct, secure, or suitable for intended use cases.
+
+The author asserts no warranty and disclaims liability for its use.
+The author further expresses no endorsement of any kind.
+This report has not undergone any further formal or peer review.
+
+The author gratefully thanks Brandon Goodell for helpful collaboration.
+
+\tableofcontents
+
+
+\section{Executive summary}
+
+The preprint describes $\nicefrac{d}{v}$-CLSAG, a modification to the concise linkable spontaneous anonymous group (CLSAG) signature construction \cite{clsag} that generalizes the generators that may be used.
+The CLSAG design was originally written for use in the Monero transaction protocol.
+The generalization presented in the $\nicefrac{d}{v}$-CLSAG preprint is intended to support multiple-asset transactions in Zano transaction protocols, but may have other use cases.
+
+The general technique used in the construction is straightforward, in that components of verification keys may use different generators.
+These generators may be reused between components, and need not have any particular structure or independence.
+
+Because the $\nicefrac{d}{v}$-CLSAG design follows that of CLSAG closely, the preprint is structured cleanly to directly show relevant modifications.
+The preprint uses the same numbering system as the CLSAG preprint, but does not reproduce sections or results that are unchanged.
+This makes it very easy to follow the intent of the design and the structure of security proofs.
+
+We find several trivial or minor issues, mainly dealing with notation and clarity.
+Many of these are common to the CLSAG preprint as well, but are provided so as to provide a more complete review.
+
+We find several major issues, some of which are common to CLSAG.
+
+One issue relates to a requirement that ensures verification cannot short-circuit hash function evaluations.
+This report provides a straightforward fix that adds a check to signature verification.\footnote{The implementation of CLSAG in the Monero codebase already included this check.}
+
+The last two issues apply to the proof of unforgeability.
+One of these relates to the definition of a $\kappa$-one-more discrete logarithm ($\kappa$-OMDL) player that wraps a signature forger in the proof of unforgeability.
+The other relates to a mismatch between the corruption oracle queries issued by a signature forger and those used by the $\kappa$-OMDL player in the response to its challenger in the proof of unforgeability, and applies to CLSAG as well.
+We provide modifications to the proof that address both issues.
+
+We stress that while the unforgeability findings strictly render the proof invalid, we do not find practical vulnerabilities arising from them.
+
+
+\section{Findings}
+
+We present findings from the review.
+Note that some findings comprise errors and issues, but others include explanatory material that may be useful for inclusion in future revisions to aid the reader.
+
+Findings are organized according to the relevant sections and results from the preprint.
+
+As noted, some of the findings apply to CLSAG as well.
+Because CLSAG is deployed as part of the Monero protocol, we reached out to project researchers to inform them of the relevant findings in advance of this report.
+
+Subsequent to an initial draft of this report, the Zano team updated the $\nicefrac{d}{v}$-CLSAG preprint in commit \href{https://github.com/hyle-team/docs/tree/eeb53967b1f11e0178df834d7d3e3e6121ff20ff/zano/dv-CLSAG-extension}{\texttt{eeb5396}} to address findings as they saw fit.
+While we refer the reader to the updated preprint for details on any changes, we briefly indicate them throughout this section for completeness.
+
+
+\subsection{Section 3: \texorpdfstring{$\nicefrac{d}{v}$}{d/v}-CLSAG construction}
+
+
+\subsubsection{Definition 10: minor findings}
+
+\begin{itemize}
+	\item The $\mathsf{Setup}$ algorithm states that the generators $G_0, \ldots, G_{v-1}$ are sampled uniformly at random.
+	This seems to contradict the statement in Section 1 indicating that the generators may have an efficiently-computable nontrivial discrete logarithm relation.
+	While this property is not directly required in the analysis, the inconsistency should be resolved.
+
+	\item It is implicit in the definition that the generators $G_0, \ldots, G_{v-1}$ be nonzero.
+	However, this fact is important for later analysis, and we suspect it may be easy for implementers to overlook it.
+	As a result, it may be useful to explicitly state this requirement in the definition.
+
+	\item The $\mathsf{Setup}$ algorithm uses the symbol $\bm{G}$ to refer to the vector of generators used for key components.
+	However, the symbol is not defined as part of Definition 10 until the $\mathsf{KeyGen}$ algorithm.
+	It should be defined before use, or defer use of the symbol until it is defined later.
+
+	\item The $\mathsf{KeyGen}$ algorithm is missing set brackets: it uses the notation ${z_j}_{j=1}^{d-1}$ instead of $\{ z_j \}_{j=1}^{d-1}$ (the brackets must be properly escaped in order to render).
+
+	\item The $\mathsf{Sign}$ algorithm requires that $\bm{pk}_l = \bm{sk} \circ (G_{g(0)}, \ldots, G_{g(d-1)})$.
+	This notation can be simplified to $\bm{pk}_l = \bm{sk} \circ \bm{G}$.
+
+	\item The $\mathsf{Sign}$ algorithm defines the values $\{ \mathfrak{D}_j \}, W_{k,i}, \mathfrak{W}_k, w_k$ using indexes $i, j, k$.
+	While the bounds on these indexes may be inferred from context, it would be useful to list them directly to avoid confusion.
+
+	\item The $\mathsf{Sign}$ algorithm defines $L_{k,l}, R_{k,l}, c_{l+1}$ and each $L_{k,i}, R_{k,i}, C_{i+1}$ differently than in CLSAG; these changes should be highlighted for consistency, and ideally should have the $k$ index bound listed directly.
+	
+	\item The $\mathsf{Verify}$ algorithm misspells ``or'' as ``of''.
+	
+	\item The $\mathsf{Verify}$ algorithm fails if $Q \not\subset \texttt{G}^{d \times n}$ for some $n$.
+	This check should require that $Q \subset \texttt{G}^{d \times n}$ using the previously-defined $n$; it should not be arbitrary.
+	
+	\item The $\mathsf{Verify}$ algorithm fails if $\sigma \not\in \texttt{F}_p^{n'v' + 1} \times \texttt{G}^d$ for some $n', v'$.
+	It also does so if $n' \neq n$ or $v' \neq v$.
+	These checks can be simplified to the single check that $\sigma \in \texttt{F}_p^{nv + 1} \times \texttt{G}^d$.
+
+	\item Similarly to the $\mathsf{Sign}$ algorithm, the $\mathsf{Verify}$ algorithm should list the bounds on indexes $i, j, k$ when defining values that use them.
+	
+	\item The $\mathsf{Link}$ algorithm, in its full-key-oriented linkability variant, uses $\mathfrak{W}$ and $\mathfrak{W}'$ without defining them.
+	They should be parsed from the signatures $\sigma$ and $\sigma'$, respectively.
+	The given linking tags parsed from the signatures are not used.
+
+	\item The $\mathsf{Link}$ algorithm, in its single-key-oriented linkability variant, parses auxiliary group elements $\{ \mathfrak{D}_j \}_j$ and $\{ \mathfrak{D}'_j \}_j$ but does not use them.
+\end{itemize}
+
+\textbf{Action}: The Zano team addressed each of these issues in the preprint, with the exception of index bound clarification.
+They indicated a desire not to deviate from the original CLSAG preprint except where necessary, and emphasized that the bounds could be inferred from context and careful reading.
+
+
+\subsection{Section 4: proofs of security}
+
+
+\subsubsection{Lemma 2: major finding}
+
+The first major finding identified in Theorem 2 requires an addition to the lemma.
+We give such a modification here, noting that it does not address the additional minor finding.
+
+\begin{lemma}
+	For values $Q, \mathfrak{T}, \{\mathfrak{D}_j\}_j$ as defined in Definition 10, let $\{\mu_j\}_j$ also be defined as in Definition 10.
+
+	\begin{enumerate}
+		\item For all $k$ and for all $i$, the mapping $$(Q, \mathfrak{T}, \{\mathfrak{D}_j\}_j) \mapsto \sum_{j:g(j)=k} \mu_j Z_{i,j}$$ is collision resistant.
+
+		\item For all $k$, the mapping $$(Q, \mathfrak{T}, \{\mathfrak{D}_j\}_j) \mapsto \sum_{j:g(j)=k} \mu_j \mathfrak{D}_j$$ is collision resistant.
+	\end{enumerate}
+\end{lemma}
+
+\textbf{Action}: The Zano team added this modified lemma to the preprint.
+
+
+\subsubsection{Lemma 2: minor findings}
+
+\begin{itemize}
+	\item The statement of the lemma conditions on $Q \subset \mathcal{PK}$, but then further conditions on a signing key $sk \in \mathcal{PK}$, which is a contradiction.
+	This can be fixed by simply indicating that $sk$ must correspond to a verification key in $Q$.
+\end{itemize}
+
+\textbf{Action}: This is effectively superseded by the corresponding major finding, so no action was needed.
+
+
+\subsubsection{Theorem 2: major finding 1}
+
+The proof states that if the adversary \texttt{A} outputs a valid signature, all verification challenges must be computed by an actual oracle query and must be well ordered.
+This reasoning is identical to that in the corresponding CLSAG proof, and in both cases the linkable spontaneous anonymous group (LSAG) signature preprint \cite{lsag} is referenced for a proof of the claim.
+
+The LSAG design is similar to that of CLSAG, though it uses a different security model.
+In the preprint, the claim is discussed as part of the proof of its Theorem 1 in Appendix B.
+While the details of its reasoning are not essential here, the proof assumes a correspondence between verifier random oracle queries and those made by a forging adversary that retains the relative ordering.
+
+This intuitively makes sense, as each verification query in LSAG, CLSAG, and $\nicefrac{d}{v}$-CLSAG effectively embeds the output of the previous query.
+However, it is crucial to observe that this embedding is done multiplicatively.
+
+Using the $\nicefrac{d}{v}$-CLSAG verifier notation, this embedding is done in each $L_{k,i}$ and $R_{k,i}$.
+Specifically, $$L_{k,i} = s_{k,i} G_k + c'_i W_{k,i}$$ embeds $c'_i$ multiplicatively against $W_{k,i}$, and $$R_{k,i} = s_{k,i} H_i + c'_i \mathfrak{W}_k$$ embeds $c'_i$ multiplicatively against $\mathfrak{W}_k$.
+
+The issue arises if $W_{k,i} = \mathfrak{W}_k = 0$ for all $k$ and any $i$.
+If this is the case, the verifier's computation of $c'_{i+1}$ no longer requires $c'_i$.
+As the verifier's only check is that $c'_n = c_0$, it no longer needs to obtain all $c'_i$ through random oracle queries.
+
+This means that the reasoning of the LSAG proof (and, therefore, those of CLSAG and $\nicefrac{d}{v}$-CLSAG) effectively requires that each purported verifier query ensure a proper embedding of the previous query through at least one such nonzero multiplication per query.
+
+There are multiple ways to accomplish this, using the particular definitions of each relevant multiplicand.
+We recall the definitions of the multiplicands in question:
+\begin{eqnarray*}
+	W_{k,i} &=& \sum_{j:g(j)=k} \mu_j Z_{i,j} \\
+	\mathfrak{W}_k &=& \sum_{j:g(j)=k} \mu_j \mathfrak{D}_j
+\end{eqnarray*}
+
+It suffices to show that at least one of the following holds:
+\begin{enumerate}
+	\item There exists $k$ such that $\mathfrak{W}_k \neq 0$.
+	\item For each $i$, there exists $k$ (possibly distinct across $i$) such that $W_{k,i} \neq 0$.
+\end{enumerate}
+We claim that it further suffices for the verifier to check that $\mathfrak{T} \neq 0$, which is computationally efficient.
+To see why, observe that if all $\{\mathfrak{D}_j\}_j = 0$, then $\mathfrak{W}_k = 0$ for all $k$.
+The definition of each $\mathfrak{W}_k$ is precisely one of the mappings given in the modified Lemma 2; since the mapping is collision resistant, it is second-preimage resistant and therefore setting $\mathfrak{T} \neq 0$ will not map to zero except with negligible probability.
+
+It is also possible to check that any other $\{\mathfrak{D}_j\} \neq 0$, or (using the other mapping in the modified Lemma 2 with the same reasoning) that there exists a nonzero key component $Z_{i,j}$ for all $i$; however, these are either less efficient or of equivalent efficiency.
+
+To summarize, this issue may be addressed by updating the $\mathsf{Verify}$ algorithm in Definition 10 to check that $\mathfrak{T} \neq 0$.
+
+\textbf{Action}: The Zano team added this check to the preprint.
+
+
+\subsubsection{Theorem 2: major finding 2}
+
+The proof describes an algorithm \texttt{M} that plays the $\kappa$-OMDL game introduced in Definition 1, and which wraps the forking algorithm $\mathcal{F}^B$, ultimately working down to the adversary \texttt{A}.
+
+The definition of \texttt{M} presented in the proof is flawed at several points.
+
+It states that \texttt{M} receives a set $S = \{ \widetilde{pk}_i \}_{i=0}^{q-1}$ of discrete logarithm public keys from its challenger.
+However, this is poorly defined; the $\kappa$-OMDL game described in Definition 1 fixes a single group generator $G \in \texttt{G}$ that it uses to produce its challenge points.
+This generator is not specified in the proof.
+
+After receiving the challenge points, \texttt{M} next partitions them into vectors of $d$ keys each, suitable for presentation to the forking algorithm:
+\begin{alignat*}{2}
+	pk_0 &= (Z_{0,0}, \ldots, Z_{0,d-1}) &&= (\widetilde{pk}_0, \ldots, \widetilde{pk}_{d-1}) \\
+	pk_1 &= (Z_{1,0}, \ldots, Z_{1,d-1}) &&= (\widetilde{pk}_d, \ldots, \widetilde{pk}_{2d-1}) \\
+	&&\vdots
+\end{alignat*}
+In the case where the forking algorithm $\mathcal{F}^B$ returns a pair of valid signature triples representing a successful forgery, the structure of the public keys means that the forgery is only valid when the public key generator vector $\bm{G}$ consists of only the generator $G$ used by the $\kappa$-OMDL challenger.
+The more general case of arbitrary generators intended for $\nicefrac{d}{v}$-CLSAG in Definition 10, where different components of each $pk_i$ may use distinct generators from $\bm{G}$, cannot apply.
+Specifically, the generator $G_k$ given in the discusssion of the success probability of \texttt{M} is only known after the forgery is produced; however, the $\kappa$-OMDL game requires it to be specified in advance.
+
+We further note ambiguity in the computation of weighting coefficients $\{\mu_j\}_j$ returned from a successful forgery by $\mathcal{F}^B$.
+Recall that the forking algorithm returns two valid signature tuples: $(m, Q, \sigma)$ and $(m, Q, \sigma')$.
+Because each coefficient $\mu_j$ uses the linking tag auxiliary group elements from a signature as random oracle input, it is unclear which signature ($\sigma$ or $\sigma'$) \texttt{M} should use to compute the set $\{\mu_j\}_j$.
+Fortunately, it does not matter which is used; however, this should be specified.
+
+This observation also leads to a further ambiguity.
+The definition states that if all weighting coefficients are zero, \texttt{M} effectively fails.
+It should be specified whether this occurs if \textit{either} set of weighting coefficients (those from $\sigma$ or from $\sigma'$) is zero, or if \textit{both} sets are zero.
+In either case, this likelihood is negligible.
+
+Further, the algorithm can be simplified in this case by not having \texttt{M} sample random values to return to its challenger, but simply to return failure.
+Indeed, the random sampling specified in the definition returns the set $\{w_k\}_k$ as one component of its response to the challenger, but the challenger expects only a single value for this component.
+
+\textbf{Action}: This is effectively superseded by the next major finding, so no action was needed.
+
+
+\subsubsection{Theorem 2: major finding 3}
+
+In the proof, the algorithm \texttt{M} plays the $\kappa$-OMDL game with public keys supplied by its challenger by wrapping the forking algorithm $\mathcal{F}^B$ to produce a pair of valid forged signatures.
+
+The $\kappa$-OMDL game given in Definition 1 requires that the number of challenger keys $\kappa + 1$ used in the player's response exceed the number of corruption oracle queries the player makes; that is, the player may corrupt only up to $\kappa$ keys.
+
+The statement of the proof states that if there exists a forger making $\kappa'$ corruption oracle queries, then the algorithm \texttt{M} is a solver of the $2d\kappa'$-OMDL game.
+This bound purportedly arises because each of the $\kappa'$ corruption oracle queries made by the forger corresponds to a public key with $d$ components, each of which is corrupted by \texttt{M}.
+Further, the use of the forking algorithm $\mathcal{F}^B$ to produce a pair of forged signatures produces the factor of $2$ in the bound: each of the forged signatures involves $d\kappa'$ corrupted public key components.
+
+However, the response returned by \texttt{M} to its challenger fails to meet the required oracle query bounds specified in Definition 1.
+Because \texttt{M} makes up to $2d\kappa'$ corruption oracle queries to its challenger, the game definition requires that it respond with at least $2d\kappa' + 1$ keys used in its discrete logarithm relationship.
+While the number of keys returned is not directly specified in the proof, it can be inferred from context that \texttt{M} returns only $d$ keys, corresponding to those returned by the forger.
+
+This means \texttt{M} does not win the $2d\kappa'$-OMDL game.
+
+It's possible to fix this issue by modifying both the underlying hardness assumption and the definition of \texttt{M}.
+
+Specifically, we claim that we can replace the $\kappa$-OMDL game with a standard discrete logarithm game.
+In this game, the player \texttt{M} receives a single public key generated by its challenger with respect to a fixed group generator, and must respond with the corresponding discrete logarithm.
+We require that the discrete logarithm challenger set up its game such that the generator $G$ corresponds to the $j = 0$ index of $\nicefrac{d}{v}$-CLSAG public keys.
+
+This means that \texttt{M} must interact differently with the forking algorithm forger $\mathcal{F}^B$.
+The modified algorithm does the following:
+\begin{itemize}
+	\item Receives a public key $X$ from its challenger.
+	\item Samples $\{z_{i,j}\}_{i,j=0}^{q-1,d-1} \in \texttt{F}$.
+	\item Sets up $\nicefrac{d}{v}$-CLSAG public keys $$pk_i = (z_{i,0}, \ldots, z_{i,d-1}) \circ \bm{G} = (Z_{i,0}, \ldots, Z_{i,d-1})$$ and then sets $Z_{i',0} = X$ for a randomly-sampled index $i'$.
+	\item Plays the $\nicefrac{d}{v}$-CLSAG game with the forking adversary using the set of public keys.
+	\item On receiving a corruption oracle query, \texttt{M} responds with the corresponding discrete logarithms if the query does not correspond to $pk_{i'}$, and fails if the query corresponds to $pk_{i'}$.
+	\item If the forking algorithm fails, or if it succeeds on a forking index $l$ not corresponding to the returned public key set to $pk_{i'}$, \texttt{M} fails.
+	\item Otherwise, \texttt{M} uses the pair of forged signatures to compute the discrete logarithm of $X$, which it returns to its challenger.
+\end{itemize}
+
+Note that this changes the failure conditions on \texttt{M}.
+We observe that the index $i'$ is sampled uniformly at random in advance, and is unknown to the forking algorithm and forger; further, the keys produced by \texttt{M} are sampled identically to that of its challenger.
+In particular, this means that the adversary cannot base its queries or responses on this index.
+
+The likelihood that the forger does not corrupt the challenge key $pk_{i'}$ in its at most $\kappa'$ corruption oracle queries is described by a hypergeometric distribution, and is bounded by $(q-\kappa')/q$.
+The forking algorithm $\mathcal{F}^B$ runs the forger twice, so the likelihood that neither forger queries on this key is bounded by $((q-\kappa')/q)^2$.
+
+The likelihood that the forking algorithm $\mathcal{F}^B$ fails is unchanged, so the existing bound $$\epsilon \left( \frac{\epsilon}{q} - \frac{1}{2^\eta} \right)$$ holds as before.
+
+It is no longer necessary that \texttt{M} check the weighting coefficients to ensure they are not all zero.
+This is because in the $\kappa$-OMDL game, the player must produce a nontrivial discrete logarithm relation; in the standard discrete logarithm game, this is no longer the case.
+Instead, we only require that $\mu_0 \neq 0$, as it must be invertible for \texttt{M} to compute the required discrete logarithm.
+The likelihood that $\mu_0 = 0$ is negligible.
+
+Finally, for \texttt{M} to succeed, the public key set returned by the forking algorithm for its forgeries must contain $pk_{i'}$ at the forking point, noting that both forgeries fork at the same point using a common public key set.
+This likelihood is therefore bounded by $1/q$.
+
+This means that the overall likelihood that \texttt{M} succeeds is bounded by $$\left( \frac{q-\kappa'}{q} \right)^2 \epsilon \left( \frac{\epsilon}{q} - \frac{1}{2^\eta} \right) \left( \frac{1}{q} \right)$$ and scales as $O(\epsilon^2)$.
+
+\textbf{Action}: The Zano team updated this proof in the preprint.
+
+
+\subsubsection{Theorem 2: minor findings}
+
+\begin{itemize}
+	\item The statement of the theorem includes the phrasing ``unforgeability exists'' instead of ``unforgeability game exists'' by mistake.
+	
+	\item Throughout the proof, the hash function $\mathcal{H}^s$ is used for round challenges.
+	This is undefined; according to Definition 10, it should be $\mathcal{H}_0^s$ instead.
+
+	\item The proof uses the notation $\mathcal{F}^b$ instead of $\mathcal{F}^B$ at one point to refer to the forking algorithm.
+	
+	\item The proof includes the phrasing ``number of corruptions oracle queries'' instead of ``number of corruption oracle queries'' by mistake.
+\end{itemize}
+
+\textbf{Action}: The Zano team addressed these issues in the preprint.
+
+
+\subsubsection{Theorem 4: minor findings}
+
+\begin{itemize}
+	\item In step 5 of the signature simulation, the phrasing ``indexing modulo n'' is used instead of the mathematically-typeset ``indexing modulo $n$'' by mistake.
+	
+	\item The first sentence of a paragraph fails to capitalize, using the phrasing ``if $b = 1$'' instead of ``If $b = 1$'' by mistake.
+\end{itemize}
+
+\textbf{Action}: The Zano team addressed these issues in the preprint.
+
+
+\bibliographystyle{plain}
+\bibliography{main}
+
+\end{document}
